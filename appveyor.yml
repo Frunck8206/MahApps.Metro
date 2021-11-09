@@ -4,13 +4,14 @@ branches:
   only:
     - develop
     - main
-    - /\d*\.\d*\.\d*/
 
 environment:
   azure-key-vault-url:
     secure: 1mKS/HfCVq+iYNRVSrrN8NEowOkKt3knrpMzw+SOy3g=
   azure-key-vault-client-id:
     secure: JfSqzmsJdXB6uIxttCRoQw1NygwxqXHDj9uIqQnWOb9VCnQYlRPlAnxgW0yTSX4b
+  azure-key-vault-tenant-id:
+    secure: FxjkcqtpulfpDpfSAu4onaLVP/H1S1ORRCQCqsZkDC6YhCSmFoMxYNsWv5uGe3ah
   azure-key-vault-client-secret:
     secure: CUpRJxMLeUZwNPMcqI0wECaWfy5AMnWn1UZhBd9WnQ3Z16lJP1Vzrkf24mccbhUD
   azure-key-vault-certificate:
@@ -20,16 +21,17 @@ skip_tags: true
 image: Visual Studio 2019
 test: off
 
-install:
-  - ps: Invoke-WebRequest 'https://dot.net/v1/dotnet-install.ps1' -OutFile 'dotnet-install.ps1'
-  - ps: ./dotnet-install.ps1 -Version 5.0.301 -InstallDir "C:\Program Files\dotnet"
+# install:
+  # - ps: Invoke-WebRequest 'https://dot.net/v1/dotnet-install.ps1' -OutFile 'dotnet-install.ps1'
+  # - ps: ./dotnet-install.ps1 -Version 5.0.301 -InstallDir "C:\Program Files\dotnet"
 
 pull_requests:
   do_not_increment_build_number: false
 
 build_script:
   - ps: dotnet --list-sdks
-  - ps: .\build.ps1 -target appveyor
+  - ps: gitversion /version
+  - ps: .\build.ps1 --target=ci
 
 after_build:
   - ps: gci -Filter *.trx -Path .\TestResults\ | % { (New-Object 'System.Net.WebClient').UploadFile("https://ci.appveyor.com/api/testresults/mstest/$($env:APPVEYOR_JOB_ID)", (Resolve-Path $_.FullName)) }
@@ -43,3 +45,10 @@ nuget:
 skip_commits:
   files:
     - '**/*.md'
+
+notifications:
+  - provider: Webhook
+    url: https://webhooks.gitter.im/e/3065442a8d5860a11008
+    on_build_success: true
+    on_build_failure: true
+    on_build_status_changed: false

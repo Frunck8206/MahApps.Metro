@@ -73,7 +73,7 @@
                         <mah:MetroHeader.HeaderTemplate>
                             <DataTemplate>
                                 <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
-                                    <iconPacks:PackIconMaterial VerticalAlignment="Center" Kind="FaceProfile" />
+                                    <iconPacks:PackIconMaterial VerticalAlignment="Center" Kind="TextBox" />
                                     <TextBlock Margin="2 0 0 0"
                                                VerticalAlignment="Center"
                                                Text="{Binding}" />
@@ -277,6 +277,7 @@
                              mah:TextBoxHelper.Watermark="Password"
                              Password="Password" />
                 <PasswordBox Margin="{StaticResource ControlMargin}"
+                             mah:TextBoxHelper.ClearTextButton="True"
                              mah:TextBoxHelper.UseFloatingWatermark="True"
                              mah:TextBoxHelper.Watermark="Win8"
                              Password="Win8"
@@ -464,6 +465,12 @@
                               SelectedItem="{Binding ElementName=NUD, Path=TextAlignment, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                 </mah:MetroHeader>
 
+                <mah:MetroHeader Header="WatermarkAlignment">
+                    <ComboBox Margin="{StaticResource ControlMargin}"
+                              ItemsSource="{Binding Source={StaticResource TextAlignmentValues}}"
+                              SelectedItem="{Binding ElementName=NUD, Path=(mah:TextBoxHelper.WatermarkAlignment), Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                </mah:MetroHeader>
+
                 <mah:MetroHeader Header="ButtonsAlignment">
                     <ComboBox Margin="{StaticResource ControlMargin}"
                               ItemsSource="{Binding Source={StaticResource ButtonsAlignmentValues}}"
@@ -510,6 +517,7 @@
                                        Margin="{StaticResource ControlMargin}"
                                        mah:TextBoxHelper.ClearTextButton="{Binding ElementName=NUD, Path=(mah:TextBoxHelper.ClearTextButton)}"
                                        mah:TextBoxHelper.Watermark="{Binding ElementName=NUD, Path=(mah:TextBoxHelper.Watermark)}"
+                                       mah:TextBoxHelper.WatermarkAlignment="{Binding ElementName=NUD, Path=(mah:TextBoxHelper.WatermarkAlignment)}"
                                        ButtonsAlignment="{Binding ElementName=NUD, Path=ButtonsAlignment}"
                                        Culture="{Binding ElementName=NUD, Path=Culture}"
                                        DecimalPointCorrection="{Binding ElementName=NUD, Path=DecimalPointCorrection}"

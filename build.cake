@@ -2,63 +2,75 @@
 // TOOLS / ADDINS
 ///////////////////////////////////////////////////////////////////////////////
 
-#module nuget:?package=Cake.DotNetTool.Module&version=0.5.0
 #tool dotnet:?package=NuGetKeyVaultSignTool&version=1.2.28
-#tool dotnet:?package=AzureSignTool&version=2.0.17
-#tool dotnet:?package=GitReleaseManager.Tool&version=0.11.0
-#tool dotnet:?package=GitVersion.Tool&version=5.6.6
+#tool dotnet:?package=AzureSignTool&version=3.0.0
+#tool dotnet:?package=GitReleaseManager.Tool&version=0.12.1
+#tool dotnet:?package=GitVersion.Tool&version=5.6.3
+#tool dotnet:?package=XamlStyler.Console&version=3.2008.4
 
 #tool xunit.runner.console&version=2.4.1
 #tool vswhere&version=2.8.4
-#addin nuget:?package=Cake.Figlet&version=1.4.0
+#addin nuget:?package=Cake.Figlet&version=2.0.1
 
 ///////////////////////////////////////////////////////////////////////////////
 // ARGUMENTS
 ///////////////////////////////////////////////////////////////////////////////
 
 var target = Argument("target", "Default");
-var configuration = Argument("configuration", "Release");
-var verbosity = Argument("verbosity", Verbosity.Minimal);
 
 ///////////////////////////////////////////////////////////////////////////////
 // PREPARATION
 ///////////////////////////////////////////////////////////////////////////////
 
 var repoName = "MahApps.Metro";
-var isLocal = BuildSystem.IsLocalBuild;
+var baseDir = MakeAbsolute(Directory(".")).ToString();
+var srcDir = baseDir + "/src";
+var solution = srcDir + "/MahApps.Metro.sln";
+var publishDir = baseDir + "/Publish";
+var testResultsDir = Directory(baseDir + "/TestResults");
 
-// Set build version
-if (isLocal == false || verbosity == Verbosity.Verbose)
+var styler = Context.Tools.Resolve("xstyler.exe");
+var stylerFile = baseDir + "/Settings.XAMLStyler";
+
+public class BuildData
 {
-    GitVersion(new GitVersionSettings { OutputType = GitVersionOutput.BuildServer });
+    public string Configuration { get; }
+    public Verbosity Verbosity { get; }
+    public bool IsLocalBuild { get; set; }
+    public bool IsPullRequest { get; set; }
+    public bool IsDevelopBranch { get; set; }
+    public bool IsReleaseBranch { get; set; }
+    public GitVersion GitVersion { get; set; }
+    public DirectoryPath MSBuildPath { get; }
+    public FilePath MSBuildExe { get; }
+
+    public BuildData(
+        string configuration,
+        Verbosity verbosity,
+        DirectoryPath latestMSBuildInstallationPath
+    )
+    {
+        Configuration = configuration;
+        Verbosity = verbosity;
+
+        MSBuildPath = latestMSBuildInstallationPath.Combine("./MSBuild/Current/Bin");
+        MSBuildExe = MSBuildPath.CombineWithFilePath("./MSBuild.exe");
+    }
+
+    public void SetGitVersion(GitVersion gitVersion)
+    {
+        GitVersion = gitVersion;
+        
+        IsDevelopBranch = StringComparer.OrdinalIgnoreCase.Equals("develop", GitVersion.BranchName);
+        IsReleaseBranch = StringComparer.OrdinalIgnoreCase.Equals("main", GitVersion.BranchName);
+    }
 }
-GitVersion gitVersion = GitVersion(new GitVersionSettings { OutputType = GitVersionOutput.Json });
-
-var isPullRequest = AppVeyor.Environment.PullRequest.IsPullRequest;
-var branchName = gitVersion.BranchName;
-var isDevelopBranch = StringComparer.OrdinalIgnoreCase.Equals("develop", branchName);
-var isReleaseBranch = StringComparer.OrdinalIgnoreCase.Equals("main", branchName);
-var isTagged = AppVeyor.Environment.Repository.Tag.IsTag;
-
-var latestInstallationPath = VSWhereLatest(new VSWhereLatestSettings { IncludePrerelease = true });
-var msBuildPath = latestInstallationPath.Combine("./MSBuild/Current/Bin");
-var msBuildPathExe = msBuildPath.CombineWithFilePath("./MSBuild.exe");
-
-if (FileExists(msBuildPathExe) == false)
-{
-    throw new NotImplementedException("You need at least Visual Studio 2019 to build this project.");
-}
-
-// Directories and Paths
-var solution = "./src/MahApps.Metro.sln";
-var publishDir = "./Publish";
-var testResultsDir = Directory("./TestResults");
 
 ///////////////////////////////////////////////////////////////////////////////
 // SETUP / TEARDOWN
 ///////////////////////////////////////////////////////////////////////////////
 
-Setup(ctx =>
+Setup<BuildData>(ctx =>
 {
     if (!IsRunningOnWindows())
     {
@@ -67,15 +79,45 @@ Setup(ctx =>
 
     Information(Figlet(repoName));
 
-    Information("Informational   Version: {0}", gitVersion.InformationalVersion);
-    Information("SemVer          Version: {0}", gitVersion.SemVer);
-    Information("AssemblySemVer  Version: {0}", gitVersion.AssemblySemVer);
-    Information("MajorMinorPatch Version: {0}", gitVersion.MajorMinorPatch);
-    Information("NuGet           Version: {0}", gitVersion.NuGetVersion);
-    Information("IsLocalBuild           : {0}", isLocal);
-    Information("Branch                 : {0}", branchName);
-    Information("Configuration          : {0}", configuration);
-    Information("MSBuildPath            : {0}", msBuildPath);
+    var gitVersionPath = Context.Tools.Resolve("dotnet-gitversion.exe");
+
+    Information("GitVersion             : {0}", gitVersionPath);
+
+    var buildData = new BuildData(
+        configuration: Argument("configuration", "Release"),
+        verbosity: Argument("verbosity", Verbosity.Minimal),
+        latestMSBuildInstallationPath: VSWhereLatest(new VSWhereLatestSettings { IncludePrerelease = true })
+    )
+    {
+        IsLocalBuild = BuildSystem.IsLocalBuild,
+        IsPullRequest =
+            (BuildSystem.GitHubActions.IsRunningOnGitHubActions && BuildSystem.GitHubActions.Environment.PullRequest.IsPullRequest)
+            || (BuildSystem.AppVeyor.IsRunningOnAppVeyor && BuildSystem.AppVeyor.Environment.PullRequest.IsPullRequest)
+    };
+
+    // Set build version
+    // if (buildData.IsLocalBuild == false || buildData.Verbosity == Verbosity.Verbose)
+    // {
+    //     GitVersion(new GitVersionSettings { ToolPath = gitVersionPath, OutputType = GitVersionOutput.BuildServer });
+    // }
+    buildData.SetGitVersion(GitVersion(new GitVersionSettings { ToolPath = gitVersionPath, OutputType = GitVersionOutput.Json }));
+
+    Information("MSBuild                : {0}", buildData.MSBuildExe);
+    Information("Branch                 : {0}", buildData.GitVersion.BranchName);
+    Information("Configuration          : {0}", buildData.Configuration);
+    Information("IsLocalBuild           : {0}", buildData.IsLocalBuild);
+    Information("Informational   Version: {0}", buildData.GitVersion.InformationalVersion);
+    Information("SemVer          Version: {0}", buildData.GitVersion.SemVer);
+    Information("AssemblySemVer  Version: {0}", buildData.GitVersion.AssemblySemVer);
+    Information("MajorMinorPatch Version: {0}", buildData.GitVersion.MajorMinorPatch);
+    Information("NuGet           Version: {0}", buildData.GitVersion.NuGetVersion);
+
+    if (FileExists(buildData.MSBuildExe) == false)
+    {
+        throw new NotImplementedException("You need at least Visual Studio 2019 to build this project.");
+    }
+
+    return buildData;
 });
 
 Teardown(ctx =>
@@ -97,42 +139,42 @@ Task("Clean")
 });
 
 Task("Restore")
-    .Does(() =>
+    .Does<BuildData>(data =>
 {
-    NuGetRestore(solution, new NuGetRestoreSettings { MSBuildPath = msBuildPath.ToString() });
+    NuGetRestore(solution, new NuGetRestoreSettings { MSBuildPath = data.MSBuildPath.ToString() });
 });
 
 Task("Build")
-    .Does(() =>
+    .Does<BuildData>(data =>
 {
     var msBuildSettings = new MSBuildSettings {
-        Verbosity = verbosity
-        , ToolPath = msBuildPathExe
-        , Configuration = configuration
+        Verbosity = data.Verbosity
+        , ToolPath = data.MSBuildExe
+        , Configuration = data.Configuration
         , ArgumentCustomization = args => args.Append("/m").Append("/nr:false") // The /nr switch tells msbuild to quite once it�s done
-        , BinaryLogger = new MSBuildBinaryLogSettings() { Enabled = isLocal }
+        , BinaryLogger = new MSBuildBinaryLogSettings() { Enabled = data.IsLocalBuild }
     };
     MSBuild(solution, msBuildSettings
             .SetMaxCpuCount(0)
             .WithProperty("Description", "MahApps.Metro, a toolkit for creating Metro / Modern UI styled WPF applications.")
-            .WithProperty("Version", isReleaseBranch ? gitVersion.MajorMinorPatch : gitVersion.NuGetVersion)
-            .WithProperty("AssemblyVersion", gitVersion.AssemblySemVer)
-            .WithProperty("FileVersion", gitVersion.AssemblySemFileVer)
-            .WithProperty("InformationalVersion", gitVersion.InformationalVersion)
-            .WithProperty("ContinuousIntegrationBuild", isReleaseBranch ? "true" : "false")
+            .WithProperty("Version", data.IsReleaseBranch ? data.GitVersion.MajorMinorPatch : data.GitVersion.NuGetVersion)
+            .WithProperty("AssemblyVersion", data.GitVersion.AssemblySemVer)
+            .WithProperty("FileVersion", data.GitVersion.AssemblySemFileVer)
+            .WithProperty("InformationalVersion", data.GitVersion.InformationalVersion)
+            .WithProperty("ContinuousIntegrationBuild", data.IsReleaseBranch ? "true" : "false")
             );
 });
 
 Task("Pack")
     .ContinueOnError()
-    .Does(() =>
+    .Does<BuildData>(data =>
 {
     EnsureDirectoryExists(Directory(publishDir));
 
     var msBuildSettings = new MSBuildSettings {
-        Verbosity = verbosity
-        , ToolPath = msBuildPathExe
-        , Configuration = configuration
+        Verbosity = data.Verbosity
+        , ToolPath = data.MSBuildExe
+        , Configuration = data.Configuration
     };
 
     var project = "./src/MahApps.Metro/MahApps.Metro.csproj";
@@ -140,14 +182,14 @@ Task("Pack")
       .WithTarget("pack")
       .WithProperty("NoBuild", "true")
       .WithProperty("IncludeBuildOutput", "true")
-      .WithProperty("PackageOutputPath", "../../" + publishDir)
-      .WithProperty("RepositoryBranch", branchName)
-      .WithProperty("RepositoryCommit", gitVersion.Sha)
+      .WithProperty("PackageOutputPath", publishDir)
+      .WithProperty("RepositoryBranch", data.GitVersion.BranchName)
+      .WithProperty("RepositoryCommit", data.GitVersion.Sha)
       .WithProperty("Description", "The goal of MahApps.Metro is to allow devs to quickly and easily cobble together a 'Modern' UI for their WPF apps (>= .Net 4.5), with minimal effort.")
-      .WithProperty("Version", isReleaseBranch ? gitVersion.MajorMinorPatch : gitVersion.NuGetVersion)
-      .WithProperty("AssemblyVersion", gitVersion.AssemblySemVer)
-      .WithProperty("FileVersion", gitVersion.AssemblySemFileVer)
-      .WithProperty("InformationalVersion", gitVersion.InformationalVersion)
+      .WithProperty("Version", data.IsReleaseBranch ? data.GitVersion.MajorMinorPatch : data.GitVersion.NuGetVersion)
+      .WithProperty("AssemblyVersion", data.GitVersion.AssemblySemVer)
+      .WithProperty("FileVersion", data.GitVersion.AssemblySemFileVer)
+      .WithProperty("InformationalVersion", data.GitVersion.InformationalVersion)
     );
 });
 
@@ -165,6 +207,12 @@ void SignFiles(IEnumerable<FilePath> files, string description)
         return;
     }
 
+    var vctid = EnvironmentVariable("azure-key-vault-tenant-id");
+    if(string.IsNullOrWhiteSpace(vctid)) {
+        Error("Could not resolve signing client tenant id.");
+        return;
+    }
+
     var vcs = EnvironmentVariable("azure-key-vault-client-secret");
     if(string.IsNullOrWhiteSpace(vcs)) {
         Error("Could not resolve signing client secret.");
@@ -177,49 +225,48 @@ void SignFiles(IEnumerable<FilePath> files, string description)
         return;
     }
 
-    foreach(var file in files)
+    var filesToSign = string.Join(" ", files.Select(f => MakeAbsolute(f).FullPath));
+
+    var processSettings = new ProcessSettings {
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        Arguments = new ProcessArgumentBuilder()
+            .Append("sign")
+            .Append(filesToSign)
+            .AppendSwitchQuoted("--file-digest", "sha256")
+            .AppendSwitchQuoted("--description", description)
+            .AppendSwitchQuoted("--description-url", "https://github.com/MahApps/MahApps.Metro")
+            .Append("--no-page-hashing")
+            .AppendSwitchQuoted("--timestamp-rfc3161", "http://timestamp.digicert.com")
+            .AppendSwitchQuoted("--timestamp-digest", "sha256")
+            .AppendSwitchQuoted("--azure-key-vault-url", vurl)
+            .AppendSwitchQuotedSecret("--azure-key-vault-client-id", vcid)
+            .AppendSwitchQuotedSecret("--azure-key-vault-tenant-id", vctid)
+            .AppendSwitchQuotedSecret("--azure-key-vault-client-secret", vcs)
+            .AppendSwitchQuotedSecret("--azure-key-vault-certificate", vc)
+    };
+
+    using(var process = StartAndReturnProcess("tools/AzureSignTool", processSettings))
     {
-        Information($"Sign file: {file}");
-        var processSettings = new ProcessSettings {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            Arguments = new ProcessArgumentBuilder()
-                .Append("sign")
-                .Append(MakeAbsolute(file).FullPath)
-                .AppendSwitchQuoted("--file-digest", "sha256")
-                .AppendSwitchQuoted("--description", description)
-                .AppendSwitchQuoted("--description-url", "https://github.com/MahApps/MahApps.Metro")
-                .Append("--no-page-hashing")
-                .AppendSwitchQuoted("--timestamp-rfc3161", "http://timestamp.digicert.com")
-                .AppendSwitchQuoted("--timestamp-digest", "sha256")
-                .AppendSwitchQuoted("--azure-key-vault-url", vurl)
-                .AppendSwitchQuotedSecret("--azure-key-vault-client-id", vcid)
-                .AppendSwitchQuotedSecret("--azure-key-vault-client-secret", vcs)
-                .AppendSwitchQuotedSecret("--azure-key-vault-certificate", vc)
-        };
+        process.WaitForExit();
 
-        using(var process = StartAndReturnProcess("tools/AzureSignTool", processSettings))
+        if (process.GetStandardOutput().Any())
         {
-            process.WaitForExit();
-
-            if (process.GetStandardOutput().Any())
-            {
-                Information($"Output:{Environment.NewLine}{string.Join(Environment.NewLine, process.GetStandardOutput())}");
-            }
-
-            if (process.GetStandardError().Any())
-            {
-                Information($"Errors occurred:{Environment.NewLine}{string.Join(Environment.NewLine, process.GetStandardError())}");
-            }
-
-            // This should output 0 as valid arguments supplied
-            Information("Exit code: {0}", process.GetExitCode());
+            Information($"Output:{Environment.NewLine}{string.Join(Environment.NewLine, process.GetStandardOutput())}");
         }
+
+        if (process.GetStandardError().Any())
+        {
+            Information($"Errors occurred:{Environment.NewLine}{string.Join(Environment.NewLine, process.GetStandardError())}");
+        }
+
+        // This should output 0 as valid arguments supplied
+        Information("Exit code: {0}", process.GetExitCode());
     }
 }
 
 Task("Sign")
-    .WithCriteria(() => !isPullRequest)
+    .WithCriteria<BuildData>((context, data) => !data.IsPullRequest)
     .ContinueOnError()
     .Does(() =>
 {
@@ -231,7 +278,7 @@ Task("Sign")
 });
 
 Task("SignNuGet")
-    .WithCriteria(() => !isPullRequest)
+    .WithCriteria<BuildData>((context, data) => !data.IsPullRequest)
     .ContinueOnError()
     .Does(() =>
 {
@@ -305,26 +352,25 @@ Task("SignNuGet")
 });
 
 Task("Zip")
-    .Does(() =>
+    .Does<BuildData>(data =>
 {
     EnsureDirectoryExists(Directory(publishDir));
 
-    Zip("./src/MahApps.Metro.Samples/MahApps.Metro.Demo/bin/" + configuration, publishDir + "/MahApps.Metro.Demo-v" + gitVersion.NuGetVersion + ".zip");
-    Zip("./src/MahApps.Metro.Samples/MahApps.Metro.Caliburn.Demo/bin/" + configuration, publishDir + "/MahApps.Metro.Caliburn.Demo-v" + gitVersion.NuGetVersion + ".zip");
+    Zip("./src/MahApps.Metro.Samples/MahApps.Metro.Demo/bin/" + data.Configuration, publishDir + "/MahApps.Metro.Demo-v" + data.GitVersion.NuGetVersion + ".zip");
+    Zip("./src/MahApps.Metro.Samples/MahApps.Metro.Caliburn.Demo/bin/" + data.Configuration, publishDir + "/MahApps.Metro.Caliburn.Demo-v" + data.GitVersion.NuGetVersion + ".zip");
 });
 
 Task("Tests")
     .ContinueOnError()
-    .Does(() =>
+    .Does<BuildData>(data =>
 {
     CleanDirectory(testResultsDir);
 
     var settings = new DotNetCoreTestSettings
         {
-            Configuration = configuration,
+            Configuration = data.Configuration,
             NoBuild = true,
             NoRestore = true,
-            Logger = "trx",
             ResultsDirectory = testResultsDir,
             Verbosity = DotNetCoreVerbosity.Normal
         };
@@ -332,50 +378,34 @@ Task("Tests")
     DotNetCoreTest("./src/Mahapps.Metro.Tests/Mahapps.Metro.Tests.csproj", settings);
 });
 
-Task("CreateRelease")
-    .WithCriteria(() => !isTagged)
-    .WithCriteria(() => !isPullRequest)
+Task("StyleXaml")
+    .Description("Ensures XAML Formatting is Clean")
     .Does(() =>
 {
-    var username = EnvironmentVariable("GITHUB_USERNAME");
-    if (string.IsNullOrEmpty(username))
-    {
-        throw new Exception("The GITHUB_USERNAME environment variable is not defined.");
-    }
+    Func<IFileSystemInfo, bool> exclude_Dir =
+        fileSystemInfo => !fileSystemInfo.Path.Segments.Contains("obj") && !fileSystemInfo.Path.ToString().Contains("Styles/Themes");
 
-    var token = EnvironmentVariable("GITHUB_TOKEN");
-    if (string.IsNullOrEmpty(token))
-    {
-        throw new Exception("The GITHUB_TOKEN environment variable is not defined.");
-    }
-
-    GitReleaseManagerCreate(username, token, "MahApps", repoName, new GitReleaseManagerCreateSettings {
-        Milestone         = gitVersion.MajorMinorPatch,
-        Name              = gitVersion.AssemblySemFileVer,
-        Prerelease        = isDevelopBranch,
-        TargetCommitish   = branchName,
-        WorkingDirectory  = "."
-    });
+    var files = GetFiles(srcDir + "/**/*.xaml", new GlobberSettings { Predicate = exclude_Dir });
+    Information("\nChecking " + files.Count() + " file(s) for XAML Structure");
+    StartProcess(styler, "-f \"" + string.Join(",", files.Select(f => f.ToString())) + "\" -c \"" + stylerFile + "\"");
 });
 
-Task("ExportReleaseNotes")
-    .Does(() =>
+Task("CreateRelease")
+    .WithCriteria<BuildData>((context, data) => !data.IsPullRequest)
+    .Does<BuildData>(data =>
 {
-    var username = EnvironmentVariable("GITHUB_USERNAME");
-    if (string.IsNullOrEmpty(username))
-    {
-        throw new Exception("The GITHUB_USERNAME environment variable is not defined.");
-    }
-
     var token = EnvironmentVariable("GITHUB_TOKEN");
     if (string.IsNullOrEmpty(token))
     {
         throw new Exception("The GITHUB_TOKEN environment variable is not defined.");
     }
 
-    EnsureDirectoryExists(Directory(publishDir));
-    GitReleaseManagerExport(username, token, "MahApps", repoName, publishDir + "/releasenotes.md", new GitReleaseManagerExportSettings {
-        TagName         = gitVersion.SemVer
+    GitReleaseManagerCreate(token, "MahApps", repoName, new GitReleaseManagerCreateSettings {
+        Milestone         = data.GitVersion.MajorMinorPatch,
+        Name              = data.GitVersion.AssemblySemFileVer,
+        Prerelease        = data.IsDevelopBranch,
+        TargetCommitish   = data.GitVersion.BranchName,
+        WorkingDirectory  = "."
     });
 });
 
@@ -386,10 +416,12 @@ Task("ExportReleaseNotes")
 Task("Default")
     .IsDependentOn("Clean")
     .IsDependentOn("Restore")
+    .IsDependentOn("StyleXaml")
     .IsDependentOn("Build")
-    .IsDependentOn("Tests");
+    .IsDependentOn("Tests")
+    ;
 
-Task("appveyor")
+Task("ci")
     .IsDependentOn("Default")
     .IsDependentOn("Sign")
     .IsDependentOn("Pack")

@@ -114,7 +114,7 @@ Thanks to all the great people who have already contributed to the project!
 
 This framework is free and can be used for free, open source and commercial applications. MahApps.Metro (all code, NuGets and binaries) are under the [MIT License (MIT)](./LICENSE). It's tested, used and contributed by many awesome people. So hit the magic :star: button, we appreciate it!!! :pray:
 
-The core team members, MahApps.Metro contributors and contributors in the ecosystem do this open source work in their free time. If you use MahApps.Metro a serious task, and you'd like us to invest more time on it, please donate. This project increases your income/productivity/usabilty too.
+The core team members, MahApps.Metro contributors and contributors in the ecosystem do this open source work in their free time. If you use MahApps.Metro a serious task, and you'd like us to invest more time on it, please donate. This project increases your income/productivity/usability too.
 
 [Become a sponsor](https://github.com/sponsors/punker76) and show your support to this open source project.
 
@@ -126,6 +126,7 @@ Does your company use MahApps.Metro?  Ask your manager or marketing team if your
 
 ## MahApps Examples
 
+* [Showcase/Demo application](./src/MahApps.Metro.Samples/MahApps.Metro.Demo) The showcase/demo application built by the MahApps.Metro team. Compiled versions can be downloaded from [releases](https://github.com/MahApps/MahApps.Metro/releases) and preview versions can be downloaded from [CI artifacts](https://ci.appveyor.com/project/punker76/mahapps-metro/branch/develop/artifacts)
 * [Azuser](https://github.com/Inzanit/azuser) by [@Inzanit](https://github.com/Inzanit) Azure SQL Server User Management
 * [Carnac](https://github.com/Code52/carnac) by [@Code52](https://github.com/Code52) the Magnificent Keyboard Utility
 * [Certify The Web](https://github.com/webprofusion/certify) by [@webprofusion](https://github.com/webprofusion) The GUI to manage free certificates from Let's Encrypt
@@ -149,7 +150,7 @@ Does your company use MahApps.Metro?  Ask your manager or marketing team if your
 
 ## Something missing?
 
-If you're looking for another awesome libraries which are compatible with MahApps, check them out:
+If you're looking for other awesome libraries which are compatible with MahApps, check them out:
 
 - [MaterialDesignInXamlToolkit](https://github.com/ButchersBoy/MaterialDesignInXamlToolkit) Google Material Design in XAML & WPF, for C# & VB.Net [http://materialdesigninxaml.net](http://materialdesigninxaml.net)
 - [Fluent.Ribbon](https://github.com/fluentribbon/Fluent.Ribbon) a library that implements an Office-like user interface for the Windows Presentation Foundation (WPF)
